@@ -31,7 +31,11 @@ enum EBrightnessCategory {night, cloudy, sun};
 #define CLOUDY_ON_INTERVAL_SECONDS (45*MINUTES_TO_SECONDS)
 #define CLOUDY_OFF_INTERVAL_SECONDS (45*MINUTES_TO_SECONDS)
 #define CLOUDY_SUN_THRESHOLD 120
-// Day is 100% on
+// Day is 100% on, but define the values to make a smooth transition
+#define DAY_ON_INTERVAL_SECONDS (CLOUDY_ON_INTERVAL_SECONDS + CLOUDY_OFF_INTERVAL_SECONDS)
+#define DAY_OFF_INTERVAL_SECONDS (0)
+long targetOnIntervalSeconds = DAY_ON_INTERVAL_SECONDS;
+long targetOffIntervalSeconds = DAY_OFF_INTERVAL_SECONDS;
 
 // Minimum time for the cooling to have any effect
 #define MIN_ON_TIME_SECONDS (15*MINUTES_TO_SECONDS)
@@ -81,7 +85,7 @@ void loop() {
     digitalWrite(LED_DIGITAL_PIN, LOW);
     delay(CYCLE_TIME_SECONDS*SECONDS_TO_MILLISECONDS / 2);
   }
-/*  else if (startingUp)
+  else if (startingUp)
   {
     digitalWrite(LED_DIGITAL_PIN, HIGH); 
     delay(CYCLE_TIME_SECONDS*SECONDS_TO_MILLISECONDS / 4);
@@ -91,9 +95,19 @@ void loop() {
     delay(CYCLE_TIME_SECONDS*SECONDS_TO_MILLISECONDS / 4);
     digitalWrite(LED_DIGITAL_PIN, LOW);
     delay(CYCLE_TIME_SECONDS*SECONDS_TO_MILLISECONDS / 4);
-  }*/
+  }
   else
   {
+    /*
+    digitalWrite(LED_DIGITAL_PIN, HIGH);
+    delay(targetOnIntervalSeconds * 475 /(targetOnIntervalSeconds + targetOffIntervalSeconds));
+    digitalWrite(LED_DIGITAL_PIN, LOW);
+    delay(targetOffIntervalSeconds * 475 /(targetOnIntervalSeconds + targetOffIntervalSeconds));
+    digitalWrite(LED_DIGITAL_PIN, HIGH);
+    delay(25);
+    digitalWrite(LED_DIGITAL_PIN, LOW);
+    delay(CYCLE_TIME_SECONDS*SECONDS_TO_MILLISECONDS - 500);*/
+
     if (brightnessCategory == night)
     {
       digitalWrite(LED_DIGITAL_PIN, HIGH);
@@ -147,38 +161,50 @@ EBrightnessCategory determineBrightnessCategory()
 
 bool controlValueFromBrightness(EBrightnessCategory brightness)
 {
+  long newTargetOnInterval = 0, newTargetOffInterval = 0;
   if (brightness == sun)
+  {
+    newTargetOnInterval = DAY_ON_INTERVAL_SECONDS;
+    newTargetOffInterval = DAY_OFF_INTERVAL_SECONDS;
+  }
+  else if (brightness == cloudy)
+  {
+    newTargetOnInterval = CLOUDY_ON_INTERVAL_SECONDS;
+    newTargetOffInterval = CLOUDY_OFF_INTERVAL_SECONDS;
+  }
+  else if (brightness == night)
+  {
+    newTargetOnInterval = NIGHT_ON_INTERVAL_SECONDS;
+    newTargetOffInterval = NIGHT_OFF_INTERVAL_SECONDS;
+  }
+  else
+  {
+    // This should never happen, but if it for any reason does (e.g. future development)
+    // turn off for safety
+    return false;
+  }
+
+  targetOnIntervalSeconds = (targetOnIntervalSeconds * 9 + newTargetOnInterval) / 10;
+  targetOffIntervalSeconds = (targetOffIntervalSeconds * 9 + newTargetOffInterval) / 10;  
+
+  if (targetOffIntervalSeconds < MIN_OFF_TIME_SECONDS)
   {
     return true;
   }
 
-  if (brightness == cloudy)
+  if (targetOnIntervalSeconds < MIN_ON_TIME_SECONDS)
   {
-    if (isOn)
-    {
-      return timeOnSeconds < CLOUDY_ON_INTERVAL_SECONDS ? true : false;
-    }
-    else
-    {
-      return timeOffSeconds < CLOUDY_OFF_INTERVAL_SECONDS ? false : true;
-    }
+    return false;
   }
 
-  if (brightness == night)
+  if (isOn)
   {
-    if (isOn)
-    {
-      return timeOnSeconds < NIGHT_ON_INTERVAL_SECONDS ? true : false;
-    }
-    else
-    {
-      return timeOffSeconds < NIGHT_OFF_INTERVAL_SECONDS ? false : true;
-    }
+    return timeOnSeconds < targetOnIntervalSeconds ? true : false;
   }
-
-  // This should never happen, but if it for any reason does (e.g. future development)
-  // turn off for safety
-  return false;
+  else
+  {
+    return timeOffSeconds < targetOffIntervalSeconds ? false : true;
+  }
 }
 
 bool ensureMinMaxRuntimes(bool wantOn)
